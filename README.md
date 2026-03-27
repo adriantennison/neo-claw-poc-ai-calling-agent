@@ -1,106 +1,51 @@
-# AI Calling Agent — POC
+# AI Calling Agent
 
-An AI-powered voice calling agent using **Twilio** for telephony, **OpenAI GPT-4o** for conversational intelligence, and **SQLite** for call logging. Handles both inbound and outbound calls via Twilio webhooks with per-call conversation state.
+A FastAPI backend that handles inbound Twilio phone calls and uses OpenAI GPT-4o to generate real-time conversational responses delivered via text-to-speech.
 
-## Features
+## What This Does
 
-- Inbound and outbound calls via Twilio Voice API
-- LLM-powered conversations using OpenAI GPT-4o
-- Natural voice synthesis via Twilio's Amazon Polly integration (Polly.Joanna)
-- Speech-to-text via Twilio Gather
-- Call logging and full transcript storage in SQLite
-- Configurable workflows: lead qualification, appointment booking, customer support
+1. **Receives an inbound call** via Twilio at `POST /call/incoming`
+   - Returns a TwiML `<Gather>` response that prompts the caller and listens for speech input
+   - Uses Amazon Polly (Twilio's Polly.Joanna voice) for natural-sounding TTS
 
-## Architecture
+2. **Processes speech** at `POST /call/respond`
+   - Receives the transcribed speech (`SpeechResult`) from Twilio
+   - Sends it to OpenAI GPT-4o (`gpt-4o`) as a chat completion request
+   - Returns the AI-generated reply as a TwiML voice response
+   - Continues the conversation loop with another `<Gather>`
 
-```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│   Twilio     │────▶│  FastAPI      │────▶│  OpenAI     │
-│  (Telephony) │◀────│  Server       │◀────│  GPT-4o     │
-└─────────────┘     └──────┬───────┘     └─────────────┘
-                           │
-                    ┌──────▼───────┐
-                    │  SQLite DB   │
-                    │ (Call Logs)  │
-                    └──────────────┘
-```
-
-Twilio sends webhook POST requests to FastAPI on each call event. FastAPI maintains in-memory conversation state keyed by Twilio `CallSid`, queries OpenAI for responses, and returns TwiML using `<Say>` (Polly voice) and `<Gather>` for speech input. All call metadata and transcripts are persisted to SQLite.
-
-## Quick Start
-
-### 1. Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### 2. Configure Environment
+## Setup
 
 ```bash
 cp .env.example .env
-# Fill in your API keys
+# Fill in your credentials in .env
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
 ```
 
-### 3. Run the Server
+Configure your Twilio phone number's inbound webhook to:
+- **Voice URL:** `https://your-domain.com/call/incoming` (HTTP POST)
 
-```bash
-uvicorn main:app --host 0.0.0.0 --port 8000
-```
+## Environment Variables
 
-### 4. Expose with ngrok (for Twilio webhooks)
+| Variable | Description |
+|---|---|
+| `TWILIO_ACCOUNT_SID` | Twilio Account SID |
+| `TWILIO_AUTH_TOKEN` | Twilio Auth Token |
+| `TWILIO_PHONE_NUMBER` | Your Twilio phone number |
+| `OPENAI_API_KEY` | OpenAI API key for GPT-4o access |
 
-```bash
-ngrok http 8000
-```
+## Endpoints
 
-Set `BASE_URL` in your `.env` to the ngrok HTTPS URL, then configure your Twilio phone number's voice webhook to:
-
-```
-POST https://<ngrok-url>/voice/inbound
-```
-
-### 5. Make an Outbound Call
-
-```bash
-curl -X POST http://localhost:8000/calls/outbound \
-  -H "Content-Type: application/json" \
-  -d '{"to": "+1234567890", "workflow": "lead_qualification"}'
-```
-
-## Call Workflows
-
-### lead_qualification
-Qualifies leads by asking about their needs, budget, timeline, and decision-making process.
-
-### appointment_booking
-Books appointments by collecting preferred date/time, contact details, and purpose.
-
-### customer_support
-Handles common support queries and escalates complex issues to human agents.
-
-## API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/voice/inbound` | Twilio webhook — handles incoming calls, returns TwiML greeting |
-| POST | `/voice/respond` | Twilio webhook — processes speech input, returns AI response as TwiML |
-| POST | `/voice/status` | Twilio status callback — updates call log on status changes |
-| POST | `/voice/outbound-connect` | Twilio webhook — connects outbound call and starts conversation |
-| POST | `/calls/outbound` | Initiate an outbound call with a specified workflow |
-| GET | `/calls` | List all calls with metadata (supports `limit` and `offset`) |
-| GET | `/calls/{call_sid}` | Get call details and full transcript |
-| GET | `/health` | Health check |
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/call/incoming` | Twilio webhook — greets caller, collects speech |
+| `POST` | `/call/respond` | Processes transcription, returns GPT-4o reply as TwiML |
+| `GET` | `/health` | Health check |
 
 ## Tech Stack
 
-- **Python 3.11+** / FastAPI
-- **Twilio** — Voice API, Gather (speech-to-text), Say with Amazon Polly voices
-- **OpenAI** — GPT-4o for conversation
-- **SQLite** / SQLAlchemy — Call logging and transcript storage
-- **Pydantic** — Request validation
-- **python-dotenv** — Environment config
-
-## License
-
-MIT
+- **FastAPI** — HTTP server and routing
+- **Twilio** — inbound call handling and TwiML generation
+- **OpenAI GPT-4o** — conversation logic and response generation
+- **Uvicorn** — ASGI server
