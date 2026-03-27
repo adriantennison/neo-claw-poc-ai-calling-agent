@@ -1,51 +1,64 @@
-# AI Calling Agent
+# neo-claw-poc-ai-calling-agent
 
-A FastAPI backend that handles inbound Twilio phone calls and uses OpenAI GPT-4o to generate real-time conversational responses delivered via text-to-speech.
+FastAPI backend handling inbound Twilio phone calls with GPT-4o conversational AI.
 
-## What This Does
+## Features
 
-1. **Receives an inbound call** via Twilio at `POST /call/incoming`
-   - Returns a TwiML `<Gather>` response that prompts the caller and listens for speech input
-   - Uses Amazon Polly (Twilio's Polly.Joanna voice) for natural-sounding TTS
+- Twilio request signature validation on every inbound POST
+- Per-call conversation history (multi-turn, keyed by `CallSid`)
+- GPT-4o with graceful error fallback (TwiML `<Say>` + `<Hangup>`)
+- Configurable voice and language via env vars
+- Structured logging throughout
 
-2. **Processes speech** at `POST /call/respond`
-   - Receives the transcribed speech (`SpeechResult`) from Twilio
-   - Sends it to OpenAI GPT-4o (`gpt-4o`) as a chat completion request
-   - Returns the AI-generated reply as a TwiML voice response
-   - Continues the conversation loop with another `<Gather>`
+## Structure
+
+```
+src/
+├── main.py                      # FastAPI app entry point
+├── routes/calls.py              # /call/incoming, /call/respond
+├── services/openai_service.py   # GPT-4o multi-turn conversation
+├── services/twilio_service.py   # Twilio signature validation
+└── utils/logger.py              # Logging setup
+tests/
+└── test_calls.py
+```
 
 ## Setup
 
 ```bash
 cp .env.example .env
-# Fill in your credentials in .env
 pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
+cd src && uvicorn main:app --reload
 ```
 
-Configure your Twilio phone number's inbound webhook to:
-- **Voice URL:** `https://your-domain.com/call/incoming` (HTTP POST)
+## Docker
+
+```bash
+docker build -t ai-calling-agent .
+docker run -p 8000:8000 --env-file .env ai-calling-agent
+```
+
+## Tests
+
+```bash
+pytest tests/
+```
+
+## Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/call/incoming` | Twilio inbound call webhook |
+| POST | `/call/respond` | Process speech, return GPT-4o TwiML |
+| GET | `/health` | Health check |
 
 ## Environment Variables
 
 | Variable | Description |
 |---|---|
 | `TWILIO_ACCOUNT_SID` | Twilio Account SID |
-| `TWILIO_AUTH_TOKEN` | Twilio Auth Token |
+| `TWILIO_AUTH_TOKEN` | Twilio Auth Token (used for signature validation) |
 | `TWILIO_PHONE_NUMBER` | Your Twilio phone number |
-| `OPENAI_API_KEY` | OpenAI API key for GPT-4o access |
-
-## Endpoints
-
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/call/incoming` | Twilio webhook — greets caller, collects speech |
-| `POST` | `/call/respond` | Processes transcription, returns GPT-4o reply as TwiML |
-| `GET` | `/health` | Health check |
-
-## Tech Stack
-
-- **FastAPI** — HTTP server and routing
-- **Twilio** — inbound call handling and TwiML generation
-- **OpenAI GPT-4o** — conversation logic and response generation
-- **Uvicorn** — ASGI server
+| `TWILIO_VOICE` | TTS voice (default: `Polly.Joanna`) |
+| `TWILIO_LANGUAGE` | Speech recognition language (default: `en-US`) |
+| `OPENAI_API_KEY` | OpenAI API key for GPT-4o |
